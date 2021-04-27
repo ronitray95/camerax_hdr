@@ -40,4 +40,5 @@ dependencies {
     implementation "androidx.camera:camera-extensions:1.0.0-alpha24"
     implementation 'androidx.constraintlayout:constraintlayout:2.0.4'
 
+    implementation 'net.alhazmy13.ImageFilters:library:0.1.2-beta'
 }

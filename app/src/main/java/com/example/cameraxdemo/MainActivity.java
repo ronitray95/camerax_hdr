@@ -2,6 +2,9 @@ package com.example.cameraxdemo;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -16,7 +19,6 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
-import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageCapture;
 import androidx.camera.core.ImageCaptureException;
 import androidx.camera.core.Preview;
@@ -28,7 +30,11 @@ import androidx.core.content.ContextCompat;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
+import net.alhazmy13.imagefilter.ImageFilter;
+
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -41,7 +47,7 @@ public class MainActivity extends AppCompatActivity {
     private final Executor executor = Executors.newSingleThreadExecutor();
     private PreviewView previewView;
     private Button buttonHDR;
-    private Button buttonNormal;
+    private boolean useFallBack;
     private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
 
     @Override
@@ -79,7 +85,6 @@ public class MainActivity extends AppCompatActivity {
         Size z = getBackCameraResolutionInMp();
         Log.e("Using size", String.valueOf(z));
         buttonHDR = findViewById(R.id.buttonHDR);
-        buttonNormal = findViewById(R.id.buttonNormal);
         previewView = findViewById(R.id.previewView);
         cameraProviderFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(new Runnable() {
@@ -98,28 +103,31 @@ public class MainActivity extends AppCompatActivity {
 
     void bindPreview(@NonNull ProcessCameraProvider cameraProvider, Size z) {
         Preview preview = new Preview.Builder().build();
-        CameraSelector tt = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
-        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder().build();
+        useFallBack = false;
+        CameraSelector cameraSelector = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
+        //ImageAnalysis imageAnalysis = new ImageAnalysis.Builder().build();
+
         ImageCapture.Builder builder = new ImageCapture.Builder();
         final ImageCapture imageCapture = builder
                 .setTargetRotation(this.getWindowManager().getDefaultDisplay().getRotation()).setTargetResolution(z)
                 .build();
+
+        HdrImageCaptureExtender hdrImageCaptureExtender = HdrImageCaptureExtender.create(builder);
+        if (hdrImageCaptureExtender.isExtensionAvailable(cameraSelector)) {
+            Toast.makeText(MainActivity.this, "HDR is available and enabled", Toast.LENGTH_SHORT).show();
+            hdrImageCaptureExtender.enableExtension(cameraSelector);
+        } else {
+            useFallBack = true;
+            //Toast.makeText(MainActivity.this, "HDR is not available", Toast.LENGTH_SHORT).show();
+        }
+
         preview.setSurfaceProvider(previewView.getSurfaceProvider());
-        cameraProvider.bindToLifecycle(MainActivity.this, tt, preview, imageCapture);
-        //Camera camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview, imageAnalysis, imageCapture);
+        Camera camera = cameraProvider.bindToLifecycle(MainActivity.this, cameraSelector, preview, imageCapture);
 
         buttonHDR.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                CameraSelector cameraSelector = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
-                HdrImageCaptureExtender hdrImageCaptureExtender = HdrImageCaptureExtender.create(builder);
-                if (hdrImageCaptureExtender.isExtensionAvailable(cameraSelector)) {
-                    Toast.makeText(MainActivity.this, "HDR is available and enabled", Toast.LENGTH_SHORT).show();
-                    hdrImageCaptureExtender.enableExtension(cameraSelector);
-                } else
-                    Toast.makeText(MainActivity.this, "HDR is not available", Toast.LENGTH_SHORT).show();
-                cameraProvider.unbindAll();
-                Camera camera = cameraProvider.bindToLifecycle(MainActivity.this, cameraSelector, preview, imageCapture);
+                //cameraProvider.unbindAll();
                 SimpleDateFormat mDateFormat = new SimpleDateFormat("HHmmss", Locale.getDefault());
                 String name = mDateFormat.format(new Date()) + ".jpg";
                 String dest = getBatchDirectoryName();
@@ -133,6 +141,20 @@ public class MainActivity extends AppCompatActivity {
                             @Override
                             public void run() {
                                 Toast.makeText(MainActivity.this, "Image " + name + " saved at " + dest, Toast.LENGTH_SHORT).show();
+                                if (useFallBack) {
+                                    Log.e("Fallback", "");
+                                    Bitmap res = ImageFilter.applyFilter(BitmapFactory.decodeFile(file.getAbsolutePath()), ImageFilter.Filter.HDR);
+                                    Log.e("Size", String.valueOf(res.getHeight()));
+                                    Matrix matrix = new Matrix();
+                                    matrix.postRotate(90);
+                                    Bitmap newb = Bitmap.createBitmap(res, 0, 0, res.getWidth(), res.getHeight(), matrix, true);
+
+                                    try (FileOutputStream out = new FileOutputStream(dest + "/hdr_" + name)) {
+                                        newb.compress(Bitmap.CompressFormat.JPEG, 100, out);
+                                    } catch (IOException e) {
+                                        Log.e("Bitmap save exception", e.getMessage());
+                                    }
+                                }
                             }
                         });
                     }
@@ -145,36 +167,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        buttonNormal.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                cameraProvider.unbindAll();
-                CameraSelector cameraSelector = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
-                Camera camera = cameraProvider.bindToLifecycle(MainActivity.this, cameraSelector, preview, imageCapture);
-                SimpleDateFormat mDateFormat = new SimpleDateFormat("HHmmss", Locale.getDefault());
-                String name = mDateFormat.format(new Date()) + ".jpg";
-                String dest = getBatchDirectoryName();
-                File file = new File(dest, name);
-
-                ImageCapture.OutputFileOptions outputFileOptions = new ImageCapture.OutputFileOptions.Builder(file).build();
-                imageCapture.takePicture(outputFileOptions, executor, new ImageCapture.OnImageSavedCallback() {
-                    @Override
-                    public void onImageSaved(@NonNull ImageCapture.OutputFileResults outputFileResults) {
-                        new Handler(Looper.getMainLooper()).post(new Runnable() {
-                            @Override
-                            public void run() {
-                                Toast.makeText(MainActivity.this, "Image " + name + " saved at " + dest, Toast.LENGTH_SHORT).show();
-                            }
-                        });
-                    }
-
-                    @Override
-                    public void onError(@NonNull ImageCaptureException error) {
-                        error.printStackTrace();
-                    }
-                });
-            }
-        });
     }
 
     public String getBatchDirectoryName() {
@@ -198,7 +190,7 @@ public class MainActivity extends AppCompatActivity {
                 android.hardware.Camera camera = android.hardware.Camera.open(i);
                 android.hardware.Camera.Parameters cameraParams = camera.getParameters();
                 for (int j = 0; j < cameraParams.getSupportedPictureSizes().size(); j++) {
-                    Log.e("For " + j, cameraParams.getSupportedPictureSizes().get(j).width + " " + cameraParams.getSupportedPictureSizes().get(j).height);
+                    //Log.e("For " + j, cameraParams.getSupportedPictureSizes().get(j).width + " " + cameraParams.getSupportedPictureSizes().get(j).height);
                     long pixelCountTemp = cameraParams.getSupportedPictureSizes().get(j).width * cameraParams.getSupportedPictureSizes().get(j).height; // Just changed i to j in this loop
                     if (pixelCountTemp > pixelCount) {
                         pixelCount = pixelCountTemp;
