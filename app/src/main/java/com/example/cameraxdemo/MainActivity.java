@@ -1,17 +1,13 @@
 package com.example.cameraxdemo;
 
 import android.Manifest;
-import android.content.Context;
 import android.content.pm.PackageManager;
-import android.hardware.camera2.CameraAccessException;
-import android.hardware.camera2.CameraCharacteristics;
-import android.hardware.camera2.CameraManager;
-import android.hardware.camera2.params.StreamConfigurationMap;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.util.Size;
 import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
@@ -29,7 +25,6 @@ import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import androidx.lifecycle.LifecycleOwner;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
@@ -45,7 +40,8 @@ public class MainActivity extends AppCompatActivity {
 
     private final Executor executor = Executors.newSingleThreadExecutor();
     private PreviewView previewView;
-    private Button b;
+    private Button buttonHDR;
+    private Button buttonNormal;
     private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
 
     @Override
@@ -80,22 +76,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startCamera() {
-        //https://stackoverflow.com/questions/60089819/android-10-api-29-how-to-enable-hdr-and-nigh-mode
-        CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
-        try {
-            String[] idList = manager.getCameraIdList();
-            int maxCameraCnt = idList.length;
-            for (int index = 0; index < maxCameraCnt; index++) {
-                String cameraId = manager.getCameraIdList()[index];
-                CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
-                Log.e("GY", String.valueOf(characteristics.getAvailableCaptureResultKeys()));
-                StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-            }
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-
-        b = findViewById(R.id.button);
+        Size z = getBackCameraResolutionInMp();
+        Log.e("Using size", String.valueOf(z));
+        buttonHDR = findViewById(R.id.buttonHDR);
+        buttonNormal = findViewById(R.id.buttonNormal);
         previewView = findViewById(R.id.previewView);
         cameraProviderFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(new Runnable() {
@@ -103,7 +87,7 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 try {
                     ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-                    bindPreview(cameraProvider);
+                    bindPreview(cameraProvider, z);
                 } catch (ExecutionException | InterruptedException e) {
                     // No errors need to be handled for this Future.
                     // This should never be reached.
@@ -112,38 +96,61 @@ public class MainActivity extends AppCompatActivity {
         }, ContextCompat.getMainExecutor(this));
     }
 
-    void bindPreview(@NonNull ProcessCameraProvider cameraProvider) {
-        Preview preview = new Preview.Builder()
-                .build();
-        CameraSelector cameraSelector = new CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                .build();
-        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
-                .build();
-
+    void bindPreview(@NonNull ProcessCameraProvider cameraProvider, Size z) {
+        Preview preview = new Preview.Builder().build();
+        CameraSelector tt = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
+        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder().build();
         ImageCapture.Builder builder = new ImageCapture.Builder();
-
-        HdrImageCaptureExtender hdrImageCaptureExtender = HdrImageCaptureExtender.create(builder);
-
-        if (hdrImageCaptureExtender.isExtensionAvailable(cameraSelector)) {
-            // Enable the extension if available.
-            Toast.makeText(MainActivity.this, "HDR is available and enabled", Toast.LENGTH_SHORT).show();
-            hdrImageCaptureExtender.enableExtension(cameraSelector);
-        } else
-            Toast.makeText(MainActivity.this, "HDR is not available", Toast.LENGTH_SHORT).show();
-
-
         final ImageCapture imageCapture = builder
-                .setTargetRotation(this.getWindowManager().getDefaultDisplay().getRotation())
+                .setTargetRotation(this.getWindowManager().getDefaultDisplay().getRotation()).setTargetResolution(z)
                 .build();
-
         preview.setSurfaceProvider(previewView.getSurfaceProvider());
-
+        cameraProvider.bindToLifecycle(MainActivity.this, tt, preview, imageCapture);
         //Camera camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview, imageAnalysis, imageCapture);
-        Camera camera = cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, preview, imageCapture);
-        b.setOnClickListener(new View.OnClickListener() {
+
+        buttonHDR.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                CameraSelector cameraSelector = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
+                HdrImageCaptureExtender hdrImageCaptureExtender = HdrImageCaptureExtender.create(builder);
+                if (hdrImageCaptureExtender.isExtensionAvailable(cameraSelector)) {
+                    Toast.makeText(MainActivity.this, "HDR is available and enabled", Toast.LENGTH_SHORT).show();
+                    hdrImageCaptureExtender.enableExtension(cameraSelector);
+                } else
+                    Toast.makeText(MainActivity.this, "HDR is not available", Toast.LENGTH_SHORT).show();
+                cameraProvider.unbindAll();
+                Camera camera = cameraProvider.bindToLifecycle(MainActivity.this, cameraSelector, preview, imageCapture);
+                SimpleDateFormat mDateFormat = new SimpleDateFormat("HHmmss", Locale.getDefault());
+                String name = mDateFormat.format(new Date()) + ".jpg";
+                String dest = getBatchDirectoryName();
+                File file = new File(dest, name);
+
+                ImageCapture.OutputFileOptions outputFileOptions = new ImageCapture.OutputFileOptions.Builder(file).build();
+                imageCapture.takePicture(outputFileOptions, executor, new ImageCapture.OnImageSavedCallback() {
+                    @Override
+                    public void onImageSaved(@NonNull ImageCapture.OutputFileResults outputFileResults) {
+                        new Handler(Looper.getMainLooper()).post(new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(MainActivity.this, "Image " + name + " saved at " + dest, Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onError(@NonNull ImageCaptureException error) {
+                        error.printStackTrace();
+                    }
+                });
+            }
+        });
+
+        buttonNormal.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                cameraProvider.unbindAll();
+                CameraSelector cameraSelector = new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
+                Camera camera = cameraProvider.bindToLifecycle(MainActivity.this, cameraSelector, preview, imageCapture);
                 SimpleDateFormat mDateFormat = new SimpleDateFormat("HHmmss", Locale.getDefault());
                 String name = mDateFormat.format(new Date()) + ".jpg";
                 String dest = getBatchDirectoryName();
@@ -178,5 +185,30 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(MainActivity.this, "Error creating folder", Toast.LENGTH_SHORT).show();
         }
         return app_folder_path;
+    }
+
+    public Size getBackCameraResolutionInMp() {
+        int noOfCameras = android.hardware.Camera.getNumberOfCameras();
+        float maxResolution = -1;
+        long pixelCount = -1;
+        for (int i = 0; i < noOfCameras; i++) {
+            android.hardware.Camera.CameraInfo cameraInfo = new android.hardware.Camera.CameraInfo();
+            android.hardware.Camera.getCameraInfo(i, cameraInfo);
+            if (cameraInfo.facing == android.hardware.Camera.CameraInfo.CAMERA_FACING_BACK) {
+                android.hardware.Camera camera = android.hardware.Camera.open(i);
+                android.hardware.Camera.Parameters cameraParams = camera.getParameters();
+                for (int j = 0; j < cameraParams.getSupportedPictureSizes().size(); j++) {
+                    Log.e("For " + j, cameraParams.getSupportedPictureSizes().get(j).width + " " + cameraParams.getSupportedPictureSizes().get(j).height);
+                    long pixelCountTemp = cameraParams.getSupportedPictureSizes().get(j).width * cameraParams.getSupportedPictureSizes().get(j).height; // Just changed i to j in this loop
+                    if (pixelCountTemp > pixelCount) {
+                        pixelCount = pixelCountTemp;
+                        maxResolution = ((float) pixelCountTemp) / (1024000.0f);
+                    }
+                }
+                camera.release();
+                return new Size(cameraParams.getSupportedPictureSizes().get(0).width, cameraParams.getSupportedPictureSizes().get(0).height);
+            }
+        }
+        return new Size(0, 0);
     }
 }

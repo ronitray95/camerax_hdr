@@ -22,12 +22,24 @@
     </FrameLayout>
 
     <Button
-        android:id="@+id/button"
+        android:id="@+id/buttonHDR"
         android:layout_width="136dp"
         android:layout_height="60dp"
+        android:layout_marginStart="20dp"
         android:layout_marginBottom="50dp"
-        android:text="Take picture"
+        android:text="Capture (HDR)"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/container" />
+
+    <Button
+        android:id="@+id/buttonNormal"
+        android:layout_width="136dp"
+        android:layout_height="60dp"
+        android:layout_marginEnd="20dp"
+        android:layout_marginBottom="50dp"
+        android:text="Capture (Normal)"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintTop_toBottomOf="@+id/container" />
 </androidx.constraintlayout.widget.ConstraintLayout>
