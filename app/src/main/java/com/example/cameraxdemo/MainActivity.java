@@ -127,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
         buttonHDR.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
+                Animation.start(MainActivity.this);
                 //cameraProvider.unbindAll();
                 SimpleDateFormat mDateFormat = new SimpleDateFormat("HHmmss", Locale.getDefault());
                 String name = mDateFormat.format(new Date()) + ".jpg";
@@ -151,6 +152,7 @@ public class MainActivity extends AppCompatActivity {
 
                                     try (FileOutputStream out = new FileOutputStream(dest + "/hdr_" + name)) {
                                         newb.compress(Bitmap.CompressFormat.JPEG, 100, out);
+                                        Animation.stop(MainActivity.this);
                                     } catch (IOException e) {
                                         Log.e("Bitmap save exception", e.getMessage());
                                     }
